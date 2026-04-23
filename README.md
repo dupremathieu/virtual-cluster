@@ -7,6 +7,11 @@ A fully virtual 3-node SEAPATH cluster running on QEMU/KVM, for local developmen
 - `libvirt` / `qemu-kvm` installed and running (`systemctl status libvirtd`)
 - `terraform` >= 1.3 with the [dmacvicar/libvirt provider](https://registry.terraform.io/providers/dmacvicar/libvirt/latest)
 - `virsh` CLI (usually part of `libvirt-client`)
+- `openvswitch` installed and running (`systemctl status openvswitch`) — backs the cluster ring segments so OVS RSTP BPDUs flow between guests (Linux bridges drop them)
+- Passwordless `sudo` to `ovs-vsctl` for the current user — `make apply` / `make destroy` run `sudo ovs-vsctl add-br` / `del-br` to manage the host-side ring bridges. Drop a file in `/etc/sudoers.d/` such as:
+  ```
+  <your-user> ALL=(root) NOPASSWD: /usr/bin/ovs-vsctl
+  ```
 - `ansible` 2.16 — installed by `prepare.sh` in the SEAPATH Ansible repo (see Quick Start)
 - A SEAPATH qcow2 image with an `ansible` user whose `~/.ssh/authorized_keys` contains your public key
 
@@ -84,6 +89,8 @@ Three isolated L2 segments wire the nodes in a ring:
 | `seapath-cluster-12` | node1 NIC2 (`team0_0`) | node2 NIC3 (`team0_1`) |
 | `seapath-cluster-23` | node2 NIC2 (`team0_0`) | node3 NIC3 (`team0_1`) |
 | `seapath-cluster-31` | node3 NIC2 (`team0_0`) | node1 NIC3 (`team0_1`) |
+
+Each segment is backed by a dedicated host-side Open vSwitch bridge (`ovs-ring12/23/31`) rather than a libvirt-managed Linux bridge. This is required because the Linux bridge driver drops STP BPDUs (`01:80:C2:00:00:00`) — a behaviour hardcoded in the kernel via `BR_GROUPFWD_RESTRICTED` and not overridable via `group_fwd_mask`. Without BPDU forwarding the guest-side OVS RSTP never breaks the ring, and the resulting broadcast loop stalls Ceph mon election. OVS forwards BPDUs transparently, so the guests can converge to a proper RSTP topology.
 
 Cluster IPs (assigned statically by Ansible): node1=`192.168.55.1`, node2=`192.168.55.2`, node3=`192.168.55.3`.
 

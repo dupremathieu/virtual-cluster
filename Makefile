@@ -17,10 +17,14 @@ VIRSH := virsh -c $(LIBVIRT_URI)
 # VM domain names managed by this sandbox
 NODES := seapath-node1 seapath-node2 seapath-node3
 
+# Host OVS bridges backing the cluster ring segments
+OVS_BRIDGES := ovs-ring12 ovs-ring23 ovs-ring31
+
 # Snapshot name (override with SNAPSHOT=<name>)
 SNAPSHOT ?= default
 
 .PHONY: all init plan apply destroy \
+        ovs-setup ovs-teardown \
         start stop \
         snapshot restore snapshot-list snapshot-delete \
         ssh-node1 ssh-node2 ssh-node3 \
@@ -38,11 +42,27 @@ init:
 plan:
 	cd $(TERRAFORM_DIR) && terraform plan
 
-apply:
+apply: ovs-setup
 	cd $(TERRAFORM_DIR) && terraform apply
 
 destroy: snapshot-delete
 	cd $(TERRAFORM_DIR) && terraform destroy
+	$(MAKE) ovs-teardown
+
+## Host OVS bridges for the cluster ring (require passwordless sudo to ovs-vsctl)
+ovs-setup:
+	@for br in $(OVS_BRIDGES); do \
+		echo "Ensuring OVS bridge $$br..."; \
+		sudo ovs-vsctl --may-exist add-br $$br \
+			-- set bridge $$br stp_enable=false rstp_enable=false; \
+		sudo ovs-ofctl add-flow $$br 'priority=100,dl_dst=01:80:c2:00:00:00,actions=FLOOD'; \
+	done
+
+ovs-teardown:
+	@for br in $(OVS_BRIDGES); do \
+		echo "Removing OVS bridge $$br..."; \
+		sudo ovs-vsctl --if-exists del-br $$br; \
+	done
 
 ## VM lifecycle
 start:
@@ -110,8 +130,10 @@ help:
 	@echo "Terraform:"
 	@echo "  make init              Initialise Terraform (run once)"
 	@echo "  make plan              Show planned changes"
-	@echo "  make apply             Create/update VMs and networks"
-	@echo "  make destroy           Tear down all VMs and networks"
+	@echo "  make apply             Create/update VMs and networks (runs ovs-setup first)"
+	@echo "  make destroy           Tear down all VMs and networks (runs ovs-teardown after)"
+	@echo "  make ovs-setup         Create host OVS bridges for the ring"
+	@echo "  make ovs-teardown      Delete host OVS bridges"
 	@echo ""
 	@echo "VM lifecycle:"
 	@echo "  make start               Start all VMs"
