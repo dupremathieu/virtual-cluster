@@ -20,12 +20,15 @@ NODES := seapath-node1 seapath-node2 seapath-node3
 # Host OVS bridges backing the cluster ring segments
 OVS_BRIDGES := ovs-ring12 ovs-ring23 ovs-ring31
 
+# Libvirt networks used by the VMs
+NETWORKS := seapath-sandbox-admin seapath-cluster-12 seapath-cluster-23 seapath-cluster-31
+
 # Snapshot name (override with SNAPSHOT=<name>)
 SNAPSHOT ?= default
 
 .PHONY: all init plan apply destroy \
         ovs-setup ovs-teardown \
-        start stop \
+        start stop force-stop \
         snapshot restore snapshot-list snapshot-delete \
         ssh-node1 ssh-node2 ssh-node3 \
         console-node1 console-node2 console-node3 \
@@ -66,10 +69,34 @@ ovs-teardown:
 
 ## VM lifecycle
 start:
+	@for net in $(NETWORKS); do \
+		echo "Starting network $$net..."; \
+		$(VIRSH) net-start $$net 2>/dev/null || true; \
+	done
 	@for node in $(NODES); do echo "Starting $$node..."; $(VIRSH) start $$node; done
 
 stop:
-	@for node in $(NODES); do echo "Stopping $$node..."; $(VIRSH) shutdown $$node; done
+	@for node in $(NODES); do \
+		echo "Gracefully shutting down $$node..."; \
+		$(VIRSH) shutdown $$node 2>/dev/null || true; \
+	done
+	@echo "Waiting for VMs to power off (timeout: 120s)..."
+	@timeout=120; \
+	while [ $$timeout -gt 0 ]; do \
+		running=0; \
+		for node in $(NODES); do \
+			state=$$($(VIRSH) domstate $$node 2>/dev/null | grep -i running || true); \
+			if [ -n "$$state" ]; then running=1; fi; \
+		done; \
+		if [ $$running -eq 0 ]; then echo "All VMs stopped."; exit 0; fi; \
+		sleep 2; timeout=$$((timeout - 2)); \
+	done; \
+	echo "WARNING: Some VMs did not shut down gracefully within 120s."; \
+	echo "Run 'make force-stop' to destroy them."; \
+	exit 1
+
+force-stop:
+	@for node in $(NODES); do echo "Destroying $$node..."; $(VIRSH) destroy $$node 2>/dev/null || true; done
 
 ## Snapshots
 snapshot:
@@ -137,7 +164,8 @@ help:
 	@echo ""
 	@echo "VM lifecycle:"
 	@echo "  make start               Start all VMs"
-	@echo "  make stop                Gracefully stop all VMs"
+	@echo "  make stop                Gracefully stop all VMs (waits up to 120s)"
+	@echo "  make force-stop          Forcefully destroy all VMs immediately"
 	@echo ""
 	@echo "Snapshots (override name with SNAPSHOT=<name>, default: 'default'):"
 	@echo "  make snapshot            Snapshot all VMs"
