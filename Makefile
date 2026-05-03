@@ -100,7 +100,14 @@ force-stop:
 
 ## Snapshots
 snapshot:
-	@for node in $(NODES); do echo "Snapshotting $$node ($(SNAPSHOT))..."; $(VIRSH) snapshot-create-as $$node $(SNAPSHOT); done
+	@for node in $(NODES); do \
+		if $(VIRSH) snapshot-info $$node $(SNAPSHOT) >/dev/null 2>&1; then \
+			echo "Replacing existing snapshot $(SNAPSHOT) on $$node..."; \
+			$(VIRSH) snapshot-delete $$node $(SNAPSHOT); \
+		fi; \
+		echo "Snapshotting $$node ($(SNAPSHOT))..."; \
+		$(VIRSH) snapshot-create-as $$node $(SNAPSHOT); \
+	done
 
 restore:
 	@for node in $(NODES); do echo "Restoring $$node ($(SNAPSHOT))..."; $(VIRSH) snapshot-revert $$node $(SNAPSHOT); done
