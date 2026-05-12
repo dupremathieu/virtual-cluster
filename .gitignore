@@ -7,3 +7,4 @@
 *.qcow2
 *.wic
 *.raw
+keys/fence_virt.key

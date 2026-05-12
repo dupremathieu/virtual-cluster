@@ -42,6 +42,27 @@ all:
     apply_network_config: true
     cephadm_pullimages: true
 
+    # STONITH fencing via fence_virt + fence_virtd on the host
+    configure_ha_disable_stonith: false
+    fence_virt_host: "192.168.100.1"
+    fence_virt_port: 1229
+    fence_virt_key: "/etc/cluster/fence_virt.key"
+    vm_name_prefix: "seapath-"
+    extra_crm_cmd_to_run: |
+      property stonith-enabled=true
+      primitive stonith-node1 stonith:fence_virt \
+        params ipaddr=192.168.100.1 ipport=1229 plug=seapath-node1 key_file=/etc/cluster/fence_virt.key \
+        pcmk_host_list=node1 pcmk_host_check=static-list \
+        op monitor interval=60s
+      primitive stonith-node2 stonith:fence_virt \
+        params ipaddr=192.168.100.1 ipport=1229 plug=seapath-node2 key_file=/etc/cluster/fence_virt.key \
+        pcmk_host_list=node2 pcmk_host_check=static-list \
+        op monitor interval=60s
+      primitive stonith-node3 stonith:fence_virt \
+        params ipaddr=192.168.100.1 ipport=1229 plug=seapath-node3 key_file=/etc/cluster/fence_virt.key \
+        pcmk_host_list=node3 pcmk_host_check=static-list \
+        op monitor interval=60s
+
 # All three nodes are hypervisors
 hypervisors:
   hosts:

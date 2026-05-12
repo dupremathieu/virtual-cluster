@@ -26,6 +26,9 @@ NETWORKS := seapath-sandbox-admin seapath-cluster-12 seapath-cluster-23 seapath-
 # Snapshot name (override with SNAPSHOT=<name>)
 SNAPSHOT ?= default
 
+FENCE_KEY := keys/fence_virt.key
+FENCE_KEY_REMOTE := /etc/cluster/fence_virt.key
+
 .PHONY: all init plan apply destroy \
         ovs-setup ovs-teardown \
         start stop force-stop \
@@ -34,6 +37,7 @@ SNAPSHOT ?= default
         console-node1 console-node2 console-node3 \
         ansible-ping ansible-setup \
         ansible-setup-network ansible-setup-ceph ansible-setup-ha \
+        fence-key-gen fence-key-push fence-virtd-config fence-setup \
         help
 
 all: help
@@ -158,6 +162,44 @@ ansible-setup-ceph:
 ansible-setup-ha:
 	cd $(ANSIBLE_REPO) && ansible-playbook -i $(CURDIR)/$(INVENTORY) playbooks/cluster_setup_ha.yaml $(ANSIBLE_OPTS)
 
+## STONITH fencing (fence_virt + fence_virtd on host)
+fence-key-gen:
+	@mkdir -p keys
+	@if [ ! -f $(FENCE_KEY) ]; then \
+		dd if=/dev/urandom bs=32 count=1 of=$(FENCE_KEY) 2>/dev/null; \
+		chmod 400 $(FENCE_KEY); \
+		echo "Generated $(FENCE_KEY)"; \
+	else \
+		echo "$(FENCE_KEY) already exists (not overwriting)"; \
+	fi
+
+fence-key-push:
+	@test -f $(FENCE_KEY) || (echo "Run 'make fence-key-gen' first" && false)
+	@for ip in 192.168.100.101 192.168.100.102 192.168.100.103; do \
+		echo "Pushing fence key to $$ip..."; \
+		ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ansible@$$ip \
+			"sudo apt-get install -y -qq fence-virt 2>/dev/null; \
+			 sudo mkdir -p /etc/cluster; \
+			 echo '$$(cat $(FENCE_KEY))' | sudo tee $(FENCE_KEY_REMOTE) > /dev/null; \
+			 sudo chmod 400 $(FENCE_KEY_REMOTE)"; \
+	done
+
+fence-virtd-config:
+	@echo "Sample /etc/fence_virt.conf for the host (Fedora / Ubuntu):"
+	@echo "# Use scripts/fence-setup-host.sh to install and configure."
+	@echo ""
+	@echo "  Fedora:   module_path = \"/usr/lib64/fence-virt\""
+	@echo "  Ubuntu:   module_path = \"/usr/lib/x86_64-linux-gnu/fence-virt\""
+	@echo ""
+	@echo 'fence_virtd { listener = "tcp"; backend = "libvirt"; module_path = "..."; }'
+	@echo 'listeners { tcp { key_file = "/etc/cluster/fence_virt.key"; port = "1229"; address = "0.0.0.0"; family = "ipv4"; } }'
+	@echo 'backends { libvirt { uri = "qemu:///system"; } }'
+
+fence-setup: fence-key-gen fence-key-push
+	@echo "Fencing key generated and pushed to all VMs."
+	@echo "Ensure fence_virtd is running on the host (scripts/fence-setup-host.sh)."
+	@echo "Then re-run: make ansible-setup-ha"
+
 help:
 	@echo "SEAPATH Virtual Sandbox"
 	@echo ""
@@ -193,3 +235,9 @@ help:
 	@echo ""
 	@echo "Pass extra flags via ANSIBLE_OPTS, e.g.:"
 	@echo "  make ansible-setup ANSIBLE_OPTS='-v --check'"
+	@echo ""
+	@echo "Fencing (STONITH via fence_virt + fence_virtd):"
+	@echo "  make fence-key-gen        Generate a shared key in keys/"
+	@echo "  make fence-key-push       Install fence-virt on VMs and push the shared key"
+	@echo "  make fence-virtd-config   Print a sample fence_virt.conf for the host"
+	@echo "  make fence-setup          Run fence-key-gen + fence-key-push"

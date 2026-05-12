@@ -74,6 +74,30 @@ make ansible-setup           # full setup via seapath_setup_main.yaml
 make destroy
 ```
 
+**Set up STONITH fencing:**
+```bash
+# 1. Install and start fence_virtd on the host (one-time)
+sudo ./scripts/fence-setup-host.sh
+
+# 2. Generate shared key and push it to VMs
+make fence-setup
+
+# 3. Re-run HA setup to create stonith resources in Pacemaker
+make ansible-setup-ha
+```
+
+Fencing uses `fence_virt` inside the VMs communicating with `fence_virtd` on
+the host via TCP (port 1229) authenticated by a shared key (`keys/fence_virt.key`,
+gitignored). The inventory already includes `extra_crm_cmd_to_run` that creates
+three `stonith:fence_virt` primitives (one per node) and sets
+`stonith-enabled=true`. The shared key must be re-pushed to VMs after
+`terraform destroy && make apply`.
+
+The `configure_ha` role from the SEAPATH Ansible repo runs
+`crm -d config load update -` with the content of `extra_crm_cmd_to_run`.
+Because `configure_ha_disable_stonith: false` is set in the inventory, the
+role does not force `stonith-enabled=false` on first setup.
+
 ## Containerised workflow (cqfd)
 
 `.cqfdrc` defines flavors so the host only needs `libvirtd` + Docker/Podman.
