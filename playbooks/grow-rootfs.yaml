@@ -45,6 +45,18 @@
     - name: Extend partition and filesystem
       when: needs_grow | bool
       block:
+        - name: Check if overlay storage is mounted
+          ansible.builtin.command:
+            cmd: "findmnt -n /mnt/persistent/containers/storage/overlay"
+          register: overlay_mount
+          ignore_errors: true
+          changed_when: false
+
+        - name: Unmount overlay storage
+          ansible.builtin.command:
+            cmd: "systemd-run --scope umount /mnt/persistent/containers/storage/overlay"
+          when: overlay_mount.rc == 0
+
         - name: Resize partition to 100%
           ansible.builtin.shell:
             cmd: "printf 'Yes\n' | parted ---pretend-input-tty {{ disk_device }} resizepart {{ part_num }} 100%"
@@ -66,6 +78,12 @@
             - mountpoint.rc == 0
             - mountpoint.stdout | length > 0
           register: growfs_result
+
+        - name: Restart seapath-load-images service
+          ansible.builtin.command:
+            cmd: "systemctl restart seapath-load-images.service"
+          when: overlay_mount.rc == 0
+          ignore_errors: true
 
     - name: Report status
       ansible.builtin.debug:
