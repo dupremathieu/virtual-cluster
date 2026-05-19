@@ -148,8 +148,19 @@ console-node3:
 	$(VIRSH) console seapath-node3
 
 ## Ansible
+ANSIBLE_PING_RETRIES ?= 30
+ANSIBLE_PING_DELAY   ?= 2
+
 ansible-ping:
-	ansible all -i $(INVENTORY) -m ping $(ANSIBLE_OPTS)
+	@count=0; \
+	while [ "$$count" -lt $(ANSIBLE_PING_RETRIES) ] || [ "$(ANSIBLE_PING_RETRIES)" -eq 0 ]; do \
+		if [ "$$count" -gt 0 ]; then echo "Retrying in $(ANSIBLE_PING_DELAY)s (attempt $$count/$(ANSIBLE_PING_RETRIES))..."; fi; \
+		ansible all -i $(INVENTORY) -m ping $(ANSIBLE_OPTS) && exit 0; \
+		sleep $(ANSIBLE_PING_DELAY); \
+		count=$$((count + 1)); \
+	done; \
+	echo "ansible-ping failed after $(ANSIBLE_PING_RETRIES) attempts"; \
+	exit 1
 
 ansible-setup:
 	cd $(ANSIBLE_REPO) && ansible-playbook -i $(CURDIR)/$(INVENTORY) playbooks/seapath_setup_main.yaml $(ANSIBLE_OPTS)
