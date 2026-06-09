@@ -130,13 +130,12 @@ jobs:
           cat terraform/terraform.tfvars
 
       - name: Install SSH private key for ansible user
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SEAPATH_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          wget https://github.com/seapath/yocto-bsp/releases/download/v1.2.1/seapath-v1.2.1-artifacts-key
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          cat seapath-v1.2.1-artifacts-key > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub
 
