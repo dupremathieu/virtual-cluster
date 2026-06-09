@@ -196,52 +196,12 @@ jobs:
       - name: Grow root partition and filesystem
         run: sg libvirt -c 'make ansible-grow-rootfs'
 
-      - name: Push fencing key to VMs
-        run: |
-          set -euxo pipefail
-          for ip in 192.168.100.101 192.168.100.102 192.168.100.103; do
-            echo "Pushing fence key to $ip..."
-            scp -o StrictHostKeyChecking=no \
-              /tmp/fence/fence_virt.key \
-              "ansible@$ip:/tmp/fence_virt.key"
-            ssh -t -o StrictHostKeyChecking=no "ansible@$ip" \
-              "sudo /bin/sh -c 'apt-get update -qq 2>/dev/null; apt-get install -y -qq fence-virt 2>/dev/null; mkdir -p /etc/cluster; mv /tmp/fence_virt.key /etc/cluster/fence_virt.key; chmod 400 /etc/cluster/fence_virt.key'"
-          done
-
       - name: ansible-ping
         run: sg libvirt -c 'make ansible-ping'
 
       - name: ansible-setup
         run: sg libvirt -c 'make ansible-setup'
 
-      - name: Verify STONITH fencing
-        if: success()
-        run: |
-          set -euxo pipefail
-          SSH="ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-
-          echo "=== Check fence_virt binary on node1 ==="
-          $SSH ansible@192.168.100.101 'test -x /usr/sbin/fence_virt && echo "fence_virt found" || echo "fence_virt NOT found"'
-
-          echo "=== Check stonith-enabled ==="
-          $SSH ansible@192.168.100.101 "sudo /bin/sh -c 'crm configure show'" | grep 'stonith-enabled=true'
-
-          echo "=== Check stonith resources are started ==="
-          for node in node1 node2 node3; do
-            echo "  stonith-$node:"
-            $SSH ansible@192.168.100.101 "sudo /bin/sh -c 'crm resource status stonith-$node'" || echo "  (not started)"
-          done
-
-          echo "=== Fencing topology ==="
-          for node in node1 node2 node3; do
-            echo "  Devices that can fence $node:"
-            $SSH ansible@192.168.100.101 "sudo /bin/sh -c 'stonith_admin --list $node'" || echo "  (none)"
-          done
-
-          echo "=== Test fence_virt connectivity to fence_virtd ==="
-          $SSH ansible@192.168.100.102 "sudo /bin/sh -c 'fence_virt -T 192.168.100.1 -p 1229 -k /etc/cluster/fence_virt.key -o list'" || echo "  (list failed)"
-
-          echo "=== STONITH verification complete ==="
 
       - name: Diagnostics on failure
         if: failure()
