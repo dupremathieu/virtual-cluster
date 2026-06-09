@@ -3,20 +3,6 @@ name: ansible-setup
 on:
   workflow_dispatch:
     inputs:
-      s3_uri:
-        description: "Full s3:// URI of the qcow2 base image"
-        required: true
-        type: string
-      image_filename:
-        description: "Local filename to save the image as"
-        required: true
-        default: seapath-debian.qcow2
-        type: string
-      s3_host:
-        description: "S3 host (e.g. s3.fr1.next.ink). Leave blank for AWS S3."
-        required: false
-        default: ""
-        type: string
       ansible_repo:
         description: "SEAPATH Ansible repo URL to clone"
         required: false
@@ -40,6 +26,7 @@ jobs:
       ANSIBLE_HOST_KEY_CHECKING: "False"
       TF_CLI_ARGS_apply: "-auto-approve"
       TF_IN_AUTOMATION: "1"
+      IMAGE_FILENAME: seapath-host-efi-image-seapath-hypervisor.rootfs.wic.qcow2
     steps:
       - uses: actions/checkout@v4
         with:
@@ -129,29 +116,16 @@ jobs:
           sudo virsh pool-list --all
 
       - name: Fetch base image from S3
-        env:
-          ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          SECRET_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          S3_HOST: ${{ inputs.s3_host }}
-          S3_URI: ${{ inputs.s3_uri }}
-          IMAGE_FILENAME: ${{ inputs.image_filename }}
         run: |
-          set -euo pipefail
           mkdir -p images
-          host_args=()
-          if [ -n "$S3_HOST" ]; then
-            host_args=(--host="$S3_HOST" --host-bucket="%(bucket)s.$S3_HOST")
-          fi
-          s3cmd get "$S3_URI" "images/$IMAGE_FILENAME" \
-            --access_key="$ACCESS_KEY" \
-            --secret_key="$SECRET_KEY" \
-            "${host_args[@]}"
+          wget "https://releases.seapath.org/builds/test-virtual-cluster/seapath-host-efi-image-seapath-hypervisor.rootfs.wic.qcow2" \
+          -O "images/$IMAGE_FILENAME"
           sudo chmod a+r "images/$IMAGE_FILENAME"
 
       - name: Write terraform.tfvars
         run: |
           cat > terraform/terraform.tfvars <<EOF
-          base_image_path = "${{ github.workspace }}/virtual-cluster/images/${{ inputs.image_filename }}"
+          base_image_path = "${{ github.workspace }}/virtual-cluster/images/$IMAGE_FILENAME"
           EOF
           cat terraform/terraform.tfvars
 
