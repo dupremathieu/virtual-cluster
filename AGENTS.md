@@ -12,6 +12,7 @@
 - Host prerequisites that are easy to miss: running `libvirtd`, running `openvswitch`, a `default` libvirt storage pool, and passwordless sudo for `/usr/bin/ovs-vsctl` and `/usr/bin/ovs-ofctl`.
 - `make destroy` deletes snapshots first, runs `terraform destroy`, then removes the host OVS bridges; do not expect Terraform alone to own the OVS bridge lifecycle.
 - `LIBVIRT_URI` controls Makefile `virsh`; Terraform has a separate `libvirt_uri` variable, both default to `qemu:///system`.
+- CI-built `.wic.gz` artifacts must be converted before use: `make convert-image WIC=<path> [OUT=<dir>] [SIZE=<size>] [FORCE=1]` (script: `scripts/wic2qcow2.sh`, default out dir `images/`, output `<name>.wic.qcow2`). A sibling `.bmap` is ignored. Use `SIZE=` (e.g. `40G`) so the rootfs has room for `ansible-grow-rootfs`.
 
 ## Ansible Setup
 - Prepare the external Ansible repo with `./prepare.sh` before `make ansible-*`.

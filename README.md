@@ -48,6 +48,22 @@ The Makefile expects the SEAPATH Ansible repo at `../ansible` by default. Overri
 make ansible-setup ANSIBLE_REPO=/path/to/ansible
 ```
 
+## Converting .wic.gz Build Artifacts
+
+When starting from compressed images produced by the SEAPATH/training build CI — `seapath-yocto.wic.gz`, `seapath-yocto-cluster.wic.gz`, `seapath-yocto-observer.wic.gz`, or other standalone VM images — convert them to qcow2 before use:
+
+```bash
+# -> images/seapath-yocto.wic.qcow2
+make convert-image WIC=~/downloads/seapath-yocto.wic.gz
+
+# custom output dir + grow the disk for 'make ansible-grow-rootfs'
+make convert-image WIC=seapath-yocto.wic.gz OUT=images SIZE=40G
+```
+
+Requires `qemu-img` (Debian/Ubuntu: `qemu-utils`) and optionally `pigz` (falls back to `gzip`). A sibling `.wic.bmap` is detected and ignored — it is only useful for `bmaptool` flashing. The uncompressed image is staged next to the output during conversion, so the target filesystem needs enough free space. Re-run with `FORCE=1` (or script flag `-f`) to overwrite an existing output.
+
+Point `base_image_path` in `terraform/terraform.tfvars` at the resulting qcow2. To deploy it as a guest with `make ansible-deploy-vm`, place it in `images/` and export `VM_IMAGE_FILENAME=<name>`.
+
 ## Network Design
 
 ### Admin network (`seapath-sandbox-admin`)
@@ -107,6 +123,7 @@ Fixed PCI slot addresses are injected via XSLT so the guest OS sees predictable 
 | `fence-key-push` | Install `fence-virt` on VMs and push the shared key |
 | `fence-virtd-config` | Print a sample `fence_virt.conf` for the host |
 | `fence-setup` | Run `fence-key-gen` + `fence-key-push` |
+| `convert-image` | Convert a `.wic.gz` build artifact to qcow2 (`WIC=<file> [OUT=<dir>] [SIZE=<size>]`) |
 
 Override the snapshot name with `SNAPSHOT`:
 ```bash

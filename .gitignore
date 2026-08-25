@@ -4,7 +4,9 @@
 /terraform/terraform.tfstate.backup
 /terraform/terraform.tfvars
 /ansible/
+/images/
 *.qcow2
 *.wic
+*.wic.gz
 *.raw
 keys/fence_virt.key

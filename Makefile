@@ -42,6 +42,7 @@ FENCE_KEY_REMOTE := /etc/cluster/fence_virt.key
 		ansible-cukinia-tests \
 		ansible-vm-migration \
         fence-key-gen fence-key-push fence-virtd-config fence-setup \
+        convert-image \
         help
 
 all: help
@@ -228,6 +229,20 @@ fence-setup: fence-key-gen fence-key-push
 	@echo "Ensure fence_virtd is running on the host (scripts/fence-setup-host.sh)."
 	@echo "Then re-run: make ansible-setup-ha"
 
+## Image conversion (.wic.gz build artifact -> qcow2 for base_image_path)
+# WIC: path to the compressed .wic.gz image, OUT: output directory,
+# SIZE: optional qemu-img resize (e.g. SIZE=40G) for ansible-grow-rootfs,
+# FORCE=1: overwrite an existing output file
+WIC   ?=
+OUT   ?= images
+SIZE  ?=
+FORCE ?=
+
+convert-image:
+	@test -n "$(strip $(WIC))" || { \
+		echo "Usage: make convert-image WIC=<path/to/image.wic.gz> [OUT=images] [SIZE=40G] [FORCE=1]"; exit 1; }
+	@./scripts/wic2qcow2.sh "$(WIC)" -o "$(OUT)" $(if $(SIZE),-s "$(SIZE)") $(if $(filter 1,$(FORCE)),-f)
+
 help:
 	@echo "SEAPATH Virtual Sandbox"
 	@echo ""
@@ -264,6 +279,10 @@ help:
 	@echo ""
 	@echo "Pass extra flags via ANSIBLE_OPTS, e.g.:"
 	@echo "  make ansible-setup ANSIBLE_OPTS='-v --check'"
+	@echo ""
+	@echo "Image conversion (from .wic.gz build artifacts):"
+	@echo "  make convert-image       Convert WIC=<image.wic.gz> to qcow2 in OUT=images"
+	@echo "                           optional SIZE=<size> resizes it (qemu-img resize)"
 	@echo ""
 	@echo "Fencing (STONITH via fence_virt + fence_virtd):"
 	@echo "  make fence-key-gen        Generate a shared key in keys/"
