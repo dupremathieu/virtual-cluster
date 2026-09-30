@@ -342,7 +342,7 @@ jobs:
       - name: Generate test report
         working-directory: test-report-pdf
         run: |
-          cp ${{ env.ANSIBLE_REPO }}/test_results/* include/
+          cp ${{ env.RESULTS_FOLDER }}/* include/
           compliance_matrices=()
           if [[ -n "${{ inputs.compliance_matrices_folder }}" ]]; then
             for matrix in ${{ env.ANSIBLE_REPO }}/.github/test-report/bp28-compliance-matrices/${{ inputs.compliance_matrices_folder }}/*; do
