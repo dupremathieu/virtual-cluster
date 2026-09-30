@@ -330,15 +330,6 @@ jobs:
           strict: true
           data_file: "${{ env.RESULTS_FOLDER }}/hypervisors_facts.json"
 
-      - name: Templatize system information
-        uses: cuchi/jinja2-action@8bd801365a8d36a0b20f45ee969161685de7785a # v1.3.0
-        with:
-          template: ${{ env.ANSIBLE_REPO }}/.github/test-report/system_info.adoc.j2
-          output_file: test-report-pdf/include/system_info.adoc
-          strict: true
-          data_file: "${{ env.RESULTS_FOLDER }}/hypervisors_facts.json"
-
-
       - name: Templatize notes
         uses: cuchi/jinja2-action@8bd801365a8d36a0b20f45ee969161685de7785a # v1.3.0
         with:
