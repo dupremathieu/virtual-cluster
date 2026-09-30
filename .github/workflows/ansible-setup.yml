@@ -298,7 +298,7 @@ jobs:
           ansible-playbook \
             -i ${{ env.HYPERVISOR_INVENTORY }} \
             --limit "standalone_machine,cluster_machines" \
-            playbooks/ci_test.yaml \
+            playbooks/test_run_cukinia.yaml \
             --extra-vars "cukinia_test_prefix=/${{ env.RESULTS_FOLDER
             }}" \
 
