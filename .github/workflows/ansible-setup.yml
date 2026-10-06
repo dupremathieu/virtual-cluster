@@ -5,9 +5,9 @@ on:
   workflow_call:
     inputs:
       ansible_repo:
-        description: "SEAPATH Ansible repo URL to clone"
+        description: "SEAPATH Ansible repository to check out (owner/name)"
         required: false
-        default: "https://github.com/seapath/ansible.git"
+        default: "seapath/ansible"
         type: string
       ansible_ref:
         description: "Branch, tag or commit of the Ansible repo to check out"
@@ -38,9 +38,9 @@ on:
   workflow_dispatch:
     inputs:
       ansible_repo:
-        description: "SEAPATH Ansible repo URL to clone"
+        description: "SEAPATH Ansible repository to check out (owner/name)"
         required: false
-        default: "https://github.com/seapath/ansible.git"
+        default: "seapath/ansible"
         type: string
       ansible_ref:
         description: "Branch, tag or commit of the Ansible repo to check out"
@@ -86,7 +86,11 @@ jobs:
       ANSIBLE_REPO: "${{ github.workspace }}"
       VIRTUAL_CLUSTER_REPO: "${{ github.workspace }}/virtual-cluster"
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout ansible
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.ansible_repo }}
+          ref: ${{ inputs.ansible_ref }}
 
       - name: Checkout virtual-cluster
         uses: actions/checkout@v6
@@ -220,9 +224,6 @@ jobs:
           ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub
 
       - name: Clone and prepare SEAPATH Ansible repo
-        env:
-          ANSIBLE_REPO_URL: ${{ inputs.ansible_repo }}
-          ANSIBLE_REF: ${{ inputs.ansible_ref }}
         run: |
           set -euxo pipefail
           cd $ANSIBLE_REPO
