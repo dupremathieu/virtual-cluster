@@ -142,6 +142,8 @@ jobs:
               -- set bridge "$br" datapath_type=netdev
           done
           sudo ovs-vsctl --timeout=10 show
+          # The runner container cannot create the libvirt machine cgroup.
+          echo 'cgroup_controllers = []' | sudo tee -a /etc/libvirt/qemu.conf
           sudo service virtlogd start || sudo virtlogd -d
           sudo service libvirtd start || sudo libvirtd -d
           sudo virsh -c qemu:///system version
