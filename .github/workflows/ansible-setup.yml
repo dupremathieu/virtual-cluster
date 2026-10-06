@@ -132,9 +132,15 @@ jobs:
           set -euxo pipefail
           # Namespace runners do not boot with systemd as PID 1: start the
           # daemons through their init scripts instead.
-          sudo modprobe openvswitch || true
-          sudo /usr/share/openvswitch/scripts/ovs-ctl start || true
-          pgrep -a ovs || true
+          # The runner kernel has no openvswitch module: run ovs-vswitchd with
+          # the userspace (netdev) datapath. The bridges are created here so
+          # that `make apply` (--may-exist) keeps them.
+          sudo /usr/share/openvswitch/scripts/ovs-ctl --no-ovs-vswitchd start
+          sudo ovs-vswitchd --pidfile --detach --log-file
+          for br in ovs-ring12 ovs-ring23 ovs-ring31; do
+            sudo ovs-vsctl --timeout=20 --may-exist add-br "$br" \
+              -- set bridge "$br" datapath_type=netdev
+          done
           sudo ovs-vsctl --timeout=10 show
           sudo service virtlogd start || sudo virtlogd -d
           sudo service libvirtd start || sudo libvirtd -d
