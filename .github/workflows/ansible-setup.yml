@@ -1,6 +1,7 @@
 name: ansible-setup
 
 on:
+
   workflow_call:
     inputs:
       ansible_repo:
@@ -33,6 +34,40 @@ on:
         required: false
         default: "seapath-v2.0.0-guest-efi-image.rootfs.wic.qcow2"
         type: string
+
+  workflow_dispatch:
+    inputs:
+      ansible_repo:
+        description: "SEAPATH Ansible repo URL to clone"
+        required: false
+        default: "https://github.com/seapath/ansible.git"
+        type: string
+      ansible_ref:
+        description: "Branch, tag or commit of the Ansible repo to check out"
+        required: false
+        default: "main"
+        type: string
+      hypervisor_image_url:
+        description: "URL of the SEAPATH hypervisor image to fetch"
+        required: false
+        default: "https://releases.seapath.org/builds/test-virtual-cluster/seapath-host-efi-image-seapath-hypervisor.rootfs.wic.qcow2"
+        type: string
+      hypervisor_image_filename:
+        description: "Name of the SEAPATH hypervisor image"
+        required: false
+        default: "seapath-host-efi-image-seapath-hypervisor.rootfs.wic.qcow2"
+        type: string
+      vm_image_url:
+        description: "URL of the SEAPATH VM image to fetch"
+        required: false
+        default: "https://releases.seapath.org/builds/v2.0.0/seapath-v2.0.0-guest-efi-image.rootfs.wic.qcow2"
+        type: string
+      vm_image_filename:
+        description: "Name of the SEAPATH VM image"
+        required: false
+        default: "seapath-v2.0.0-guest-efi-image.rootfs.wic.qcow2"
+        type: string
+
 jobs:
   ansible-setup:
     runs-on: ubuntu-24.04
