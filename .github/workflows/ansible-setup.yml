@@ -70,7 +70,7 @@ on:
 
 jobs:
   ansible-setup:
-    runs-on: namespace-profile-seapath
+    runs-on: namespace-profile-seapath;container.privileged=true;container.host-pid-namespace=true
     timeout-minutes: 90
     env:
       HYPERVISOR_INVENTORY: ${{ github.workspace }}/virtual-cluster/inventory/seapath-sandbox.yaml
@@ -125,7 +125,12 @@ jobs:
       - name: Enable libvirt + Open vSwitch and grant runner access
         run: |
           set -euxo pipefail
-          sudo systemctl enable --now libvirtd openvswitch-switch
+          # Namespace runners do not boot with systemd as PID 1: start the
+          # daemons through their init scripts instead.
+          sudo service openvswitch-switch start
+          sudo service virtlogd start || sudo virtlogd -d
+          sudo service libvirtd start || sudo libvirtd -d
+          sudo virsh -c qemu:///system version
           sudo usermod -aG libvirt,kvm "$USER"
           echo "$USER ALL=(ALL) NOPASSWD: /usr/bin/ovs-vsctl, /usr/bin/ovs-ofctl" \
             | sudo tee /etc/sudoers.d/runner-ovs
@@ -164,8 +169,8 @@ jobs:
           }
           FENCECONF
           sudo ufw allow 1229/tcp || true
-          sudo systemctl enable --now fence_virtd
-          sudo systemctl status fence_virtd --no-pager
+          sudo fence_virtd
+          pgrep -a fence_virtd
 
       - name: Create libvirt 'default' storage pool
         run: |
