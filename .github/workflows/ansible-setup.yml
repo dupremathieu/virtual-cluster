@@ -132,7 +132,10 @@ jobs:
           set -euxo pipefail
           # Namespace runners do not boot with systemd as PID 1: start the
           # daemons through their init scripts instead.
-          sudo service openvswitch-switch start
+          sudo modprobe openvswitch || true
+          sudo /usr/share/openvswitch/scripts/ovs-ctl start || true
+          pgrep -a ovs || true
+          sudo ovs-vsctl --timeout=10 show
           sudo service virtlogd start || sudo virtlogd -d
           sudo service libvirtd start || sudo libvirtd -d
           sudo virsh -c qemu:///system version
