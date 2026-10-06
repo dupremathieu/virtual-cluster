@@ -70,7 +70,8 @@ on:
 
 jobs:
   ansible-setup:
-    runs-on: namespace-profile-seapath;container.privileged=true;container.host-pid-namespace=true
+    runs-on:
+      - namespace-profile-seapath;container.privileged=true;container.host-pid-namespace=true
     timeout-minutes: 90
     env:
       HYPERVISOR_INVENTORY: ${{ github.workspace }}/virtual-cluster/inventory/seapath-sandbox.yaml
