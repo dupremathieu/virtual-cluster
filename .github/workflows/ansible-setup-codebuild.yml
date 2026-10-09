@@ -1,0 +1,451 @@
+name: ansible-setup-codebuild
+
+on:
+
+  workflow_call:
+    inputs:
+      ansible_repo:
+        description: "SEAPATH Ansible repo URL to clone"
+        required: false
+        default: "https://github.com/seapath/ansible.git"
+        type: string
+      ansible_ref:
+        description: "Branch, tag or commit of the Ansible repo to check out"
+        required: false
+        default: "main"
+        type: string
+      hypervisor_image_url:
+        description: "URL of the SEAPATH hypervisor image to fetch"
+        required: false
+        default: "https://releases.seapath.org/builds/test-virtual-cluster/seapath-host-efi-image-seapath-hypervisor.rootfs.wic.qcow2"
+        type: string
+      hypervisor_image_filename:
+        description: "Name of the SEAPATH hypervisor image"
+        required: false
+        default: "seapath-host-efi-image-seapath-hypervisor.rootfs.wic.qcow2"
+        type: string
+      vm_image_url:
+        description: "URL of the SEAPATH VM image to fetch"
+        required: false
+        default: "https://releases.seapath.org/builds/v2.0.0/seapath-v2.0.0-guest-efi-image.rootfs.wic.qcow2"
+        type: string
+      vm_image_filename:
+        description: "Name of the SEAPATH VM image"
+        required: false
+        default: "seapath-v2.0.0-guest-efi-image.rootfs.wic.qcow2"
+        type: string
+
+  workflow_dispatch:
+    inputs:
+      ansible_repo:
+        description: "SEAPATH Ansible repo URL to clone"
+        required: false
+        default: "https://github.com/seapath/ansible.git"
+        type: string
+      ansible_ref:
+        description: "Branch, tag or commit of the Ansible repo to check out"
+        required: false
+        default: "main"
+        type: string
+      hypervisor_image_url:
+        description: "URL of the SEAPATH hypervisor image to fetch"
+        required: false
+        default: "https://releases.seapath.org/builds/test-virtual-cluster/seapath-host-efi-image-seapath-hypervisor.rootfs.wic.qcow2"
+        type: string
+      hypervisor_image_filename:
+        description: "Name of the SEAPATH hypervisor image"
+        required: false
+        default: "seapath-host-efi-image-seapath-hypervisor.rootfs.wic.qcow2"
+        type: string
+      vm_image_url:
+        description: "URL of the SEAPATH VM image to fetch"
+        required: false
+        default: "https://releases.seapath.org/builds/v2.0.0/seapath-v2.0.0-guest-efi-image.rootfs.wic.qcow2"
+        type: string
+      vm_image_filename:
+        description: "Name of the SEAPATH VM image"
+        required: false
+        default: "seapath-v2.0.0-guest-efi-image.rootfs.wic.qcow2"
+        type: string
+
+jobs:
+  ansible-setup:
+    # Provisional CodeBuild project name; choose compute/image in AWS before running.
+    runs-on: codebuild-seapath-virtual-cluster-${{ github.run_id }}-${{ github.run_attempt }}
+    timeout-minutes: 90
+    env:
+      HYPERVISOR_INVENTORY: ${{ github.workspace }}/virtual-cluster/inventory/seapath-sandbox.yaml
+      VM_INVENTORY: ${{ github.workspace }}/virtual-cluster/inventory/seapath-test-vm.yaml
+      RESULTS_FOLDER: ${{ github.workspace }}/ansible/test_results
+      LIBVIRT_DEFAULT_URI: qemu:///system
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+      TF_CLI_ARGS_apply: "-auto-approve"
+      TF_IN_AUTOMATION: "1"
+      HYPERVISOR_IMAGE_FILENAME: seapath-host-efi-image-seapath-hypervisor.rootfs.wic.qcow2
+      VM_IMAGE_FILENAME: seapath-v2.0.0-guest-efi-image.rootfs.wic.qcow2
+      ANSIBLE_REPO: "${{ github.workspace }}"
+      VIRTUAL_CLUSTER_REPO: "${{ github.workspace }}/virtual-cluster"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Checkout virtual-cluster
+        uses: actions/checkout@v6
+        with:
+          repository: seapath/virtual-cluster.git
+          path: virtual-cluster
+          ref: main
+
+      - name: Install system dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-kvm qemu-utils ovmf libvirt-daemon-system libvirt-clients \
+            virtinst genisoimage \
+            dnsmasq-base \
+            openvswitch-switch \
+            python3-libvirt python3-pip python3-venv \
+            sshpass \
+            netcat-openbsd \
+            s3cmd \
+            xmlstarlet jq curl gnupg lsb-release \
+            fence-virt fence-virtd
+          # SEAPATH's prepare.sh requires ansible-core 2.16 exactly
+          python3 -m pip install --break-system-packages \
+            'ansible-core~=2.16.0' 'jmespath' 'netaddr' 'passlib'
+          wget -O- https://apt.releases.hashicorp.com/gpg \
+            | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/hashicorp.list
+          sudo apt-get update
+          sudo apt-get install -y terraform
+
+          curl -LO https://github.com/savoirfairelinux/cqfd/releases/download/v5.10.2/cqfd_5.10.2_all.deb
+          sudo apt install ./cqfd_5.10.2_all.deb
+
+      - name: Enable libvirt + Open vSwitch and grant runner access
+        run: |
+          set -euxo pipefail
+          sudo systemctl enable --now libvirtd openvswitch-switch
+          sudo usermod -aG libvirt,kvm "$USER"
+          echo "$USER ALL=(ALL) NOPASSWD: /usr/bin/ovs-vsctl, /usr/bin/ovs-ofctl" \
+            | sudo tee /etc/sudoers.d/runner-ovs
+          sudo chmod 0440 /etc/sudoers.d/runner-ovs
+          ls -l /dev/kvm
+
+      - name: Configure and start fence_virtd on CI host
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/fence
+          dd if=/dev/urandom bs=32 count=1 of=/tmp/fence/fence_virt.key
+          chmod 400 /tmp/fence/fence_virt.key
+          sudo mkdir -p /etc/cluster
+          sudo cp /tmp/fence/fence_virt.key /etc/cluster/fence_virt.key
+          sudo chmod 0400 /etc/cluster/fence_virt.key
+          cat | sudo tee /etc/fence_virt.conf <<'FENCECONF'
+          fence_virtd {
+              listener = "tcp";
+              backend = "libvirt";
+              module_path = "/usr/lib/x86_64-linux-gnu/fence-virt";
+          }
+
+          listeners {
+              tcp {
+                  key_file = "/etc/cluster/fence_virt.key";
+                  port = "1229";
+                  address = "0.0.0.0";
+                  family = "ipv4";
+              }
+          }
+
+          backends {
+              libvirt {
+                  uri = "qemu:///system";
+              }
+          }
+          FENCECONF
+          sudo ufw allow 1229/tcp || true
+          sudo systemctl enable --now fence_virtd
+          sudo systemctl status fence_virtd --no-pager
+
+      - name: Create libvirt 'default' storage pool
+        run: |
+          set -euxo pipefail
+          sudo mkdir -p /var/lib/libvirt/images
+          if ! sudo virsh pool-info default >/dev/null 2>&1; then
+            sudo virsh pool-define-as default dir --target /var/lib/libvirt/images
+            sudo virsh pool-build default
+            sudo virsh pool-start default
+            sudo virsh pool-autostart default
+          fi
+          sudo virsh pool-list --all
+
+      - name: Fetch base image from S3
+        env:
+          HYPERVISOR_IMAGE_URL: ${{ inputs.hypervisor_image_url }}
+          HYPERVISOR_IMAGE_FILENAME: ${{ inputs.hypervisor_image_filename }}
+          VM_IMAGE_URL: ${{ inputs.vm_image_url }}
+          VM_IMAGE_FILENAME: ${{ inputs.vm_image_filename }}
+        run: |
+          mkdir -p $VIRTUAL_CLUSTER_REPO/images
+          wget $HYPERVISOR_IMAGE_URL \
+          -O "$VIRTUAL_CLUSTER_REPO/images/$HYPERVISOR_IMAGE_FILENAME"
+
+          wget $VM_IMAGE_URL \
+          -O "$VIRTUAL_CLUSTER_REPO/images/$VM_IMAGE_FILENAME"
+
+          sudo chmod a+r "$VIRTUAL_CLUSTER_REPO/images/$HYPERVISOR_IMAGE_FILENAME"
+          sudo chmod a+r "$VIRTUAL_CLUSTER_REPO/images/$VM_IMAGE_FILENAME"
+
+      - name: Write terraform.tfvars
+        run: |
+          cat > $VIRTUAL_CLUSTER_REPO/terraform/terraform.tfvars <<EOF
+          base_image_path = "$VIRTUAL_CLUSTER_REPO/images/$HYPERVISOR_IMAGE_FILENAME"
+          EOF
+          cat $VIRTUAL_CLUSTER_REPO/terraform/terraform.tfvars
+
+      - name: Install SSH private key for ansible user
+        run: |
+          set -euo pipefail
+          wget https://github.com/seapath/yocto-bsp/releases/download/v1.2.1/seapath-v1.2.1-artifacts-key
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          cat seapath-v1.2.1-artifacts-key > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub
+
+      - name: Clone and prepare SEAPATH Ansible repo
+        env:
+          ANSIBLE_REPO_URL: ${{ inputs.ansible_repo }}
+          ANSIBLE_REF: ${{ inputs.ansible_ref }}
+        run: |
+          set -euxo pipefail
+          cd $ANSIBLE_REPO
+          ./prepare.sh
+
+      - name: Terraform init + apply (provision VMs)
+        run: |
+          cd $VIRTUAL_CLUSTER_REPO
+          sg libvirt -c 'make init && make apply'
+
+      - name: Start VMs and networks
+        run: |
+          cd $VIRTUAL_CLUSTER_REPO
+          sg libvirt -c 'make start'
+
+      - name: Wait for SSH on all nodes
+        run: |
+          set -euxo pipefail
+          for ip in 192.168.100.101 192.168.100.102 192.168.100.103; do
+            echo "Waiting for $ip:22..."
+            for i in $(seq 1 60); do
+              if nc -z -w 2 "$ip" 22; then
+                echo "  $ip is reachable"
+                break
+              fi
+              sleep 5
+              if [ "$i" -eq 60 ]; then
+                echo "Timed out waiting for $ip"
+                exit 1
+              fi
+            done
+            done
+
+      - name: Grow root partition and filesystem
+        working-directory: virtual-cluster
+        run: |
+          sg libvirt -c 'make ansible-grow-rootfs'
+
+      - name: ansible-ping
+        working-directory: virtual-cluster
+        run: |
+          sg libvirt -c 'make ansible-ping'
+
+      - name: ansible-setup
+        working-directory: virtual-cluster
+        run: |
+          sg libvirt -c 'make ansible-setup'
+
+      - name: Deploy a VM in the SEAPATH cluster
+        working-directory: virtual-cluster
+        run: |
+          sg libvirt -c 'make ansible-deploy-vm'
+
+      - name: Checkout test-report-pdf
+        uses: actions/checkout@v6
+        with:
+          repository: savoirfairelinux/test-report-pdf
+          path: test-report-pdf
+
+      - name: Prepare report metadatas
+        run: |
+          set -euxo pipefail
+          cd $ANSIBLE_REPO
+          cqfd init
+          # Create a JSON object with data about the hypervisors
+          hyp=$(cqfd exec ansible-inventory --list \
+            ${{ env.HYPERVISOR_INVENTORY }} \
+            --limit "standalone_machine,cluster_machines" \
+            2> /dev/null | jq -c .)
+
+          hyp_pretty_list=$(echo "$hyp" | jq -r 'keys | join(", ")')
+          echo "Running on hypervisors $hyp_pretty_list"
+          echo "HYPERVISOR_INVENTORY_JSON=$hyp" >> "$GITHUB_ENV"
+
+          # Create a JSON object with data about the VMs
+          vms=$(cqfd exec ansible-inventory --list \
+            ${{ env.VM_INVENTORY }} \
+            --limit "VMs" \
+            2>/dev/null | jq -c .)
+
+          vms_pretty_list=$(echo "$vms" | jq -r 'to_entries | map(if .value.rt then .key + " (RT)" else .key end) | join(", ")')
+          echo "Deployed VMs $vms_pretty_list"
+
+          echo "VM_INVENTORY_JSON=$vms" >> "$GITHUB_ENV"
+
+      - name: Prepare report generation
+        working-directory: test-report-pdf
+        run: |
+          cqfd init
+          mkdir -p ${{ env.RESULTS_FOLDER }}
+          mkdir -p include
+          cp ${{ env.ANSIBLE_REPO }}/.github/test-report/prerequisites.adoc.j2 include/
+
+          echo "$HYPERVISOR_INVENTORY_JSON" "$VM_INVENTORY_JSON" | jq --slurp '{hypervisors: .[0], vms: .[1]}' > ${{ env.RESULTS_FOLDER }}/data.json
+
+      - name: Fetch hypervisors information
+        run: |
+          cd $ANSIBLE_REPO
+          # Those run args allow to have a clean JSON output that can be parsed.
+          ANSIBLE_HOST_PATTERN_MISMATCH=ignore \
+          ANSIBLE_LOAD_CALLBACK_PLUGINS=true \
+          ANSIBLE_STDOUT_CALLBACK=json \
+          ANSIBLE_CALLBACKS_ENABLED=null \
+          ansible \
+            standalone_machine,cluster_machines \
+            -i ${{ env.HYPERVISOR_INVENTORY }} \
+            --module-name setup \
+            | jq '.plays[0].tasks[0].hosts | {host_facts: with_entries(.value = .value.ansible_facts)}' \
+            > ${{ env.RESULTS_FOLDER }}/hypervisors_facts.json
+
+      - name: Run Cukinia tests on all hypervisor nodes
+        run: |
+          cd $ANSIBLE_REPO
+          ansible-playbook \
+            -i ${{ env.HYPERVISOR_INVENTORY }} \
+            --limit "standalone_machine,cluster_machines" \
+            playbooks/test_run_cukinia.yaml \
+            --extra-vars "cukinia_test_prefix=/${{ env.RESULTS_FOLDER
+            }}" \
+
+      - name: Check Cukinia tests results
+        working-directory: ansible
+        # NOTE: Tests 109, 28, 31 and 32 are not compatible in a
+        # virtualized environment, so ignore their result.
+        run: |
+          set -euxo pipefail
+          xmlstarlet sel -t -m '//testcase[failure]' -v \
+          'concat(properties/property[@name="cukinia.id"]/@value, " | ", @classname, " | ", @name)'  -n ${{ env.RESULTS_FOLDER }}/cukinia_node*.xml | \
+          grep -Ev '^SEAPATH-(00109|00028|00031|00032|00084|00223|00033|00207|00047|00203|00198)\b' > cukinia_test_results || true
+
+          if grep -qE 'SEAPATH-[0-9]{5}' cukinia_test_results; then
+            echo "::error title=Hypervisor::Test fails, see associated test report"
+            echo "FAILED=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Test VM migration
+        run: |
+          cd $VIRTUAL_CLUSTER_REPO
+          sg libvirt -c 'make ansible-vm-migration'
+
+      - name: Templatize system information
+        uses: cuchi/jinja2-action@8bd801365a8d36a0b20f45ee969161685de7785a # v1.3.0
+        with:
+          template: ${{ env.ANSIBLE_REPO }}/.github/test-report/system_info.adoc.j2
+          output_file: test-report-pdf/include/system_info.adoc
+          strict: true
+          data_file: "${{ env.RESULTS_FOLDER }}/hypervisors_facts.json"
+
+      - name: Templatize notes
+        uses: cuchi/jinja2-action@8bd801365a8d36a0b20f45ee969161685de7785a # v1.3.0
+        with:
+          template: ${{ env.ANSIBLE_REPO }}/.github/test-report/notes.adoc.j2
+          output_file: test-report-pdf/include/notes.adoc
+          strict: true
+          data_file: "${{ env.RESULTS_FOLDER }}/data.json"
+          # uses env variables to populate the document
+
+      - name: Generate test report
+        working-directory: test-report-pdf
+        run: |
+          cp ${{ env.RESULTS_FOLDER }}/* include/
+          compliance_matrices=()
+          if [[ -n "${{ inputs.compliance_matrices_folder }}" ]]; then
+            for matrix in ${{ env.ANSIBLE_REPO }}/.github/test-report/bp28-compliance-matrices/${{ inputs.compliance_matrices_folder }}/*; do
+              matrix_name="$(basename $matrix)"
+              echo "Found compliance matrix $matrix_name"
+              compliance_matrices+=(--compliance_matrix "/report/bp28-compliance-matrices/${{ inputs.compliance_matrices_folder }}/$matrix_name")
+            done
+          fi
+
+          CQFD_EXTRA_RUN_ARGS="-v $(realpath ${{ env.ANSIBLE_REPO }}/.github/test-report):/report" \
+          cqfd exec ./compile.py \
+            --contact_email "seapath@savoirfairelinux.com" \
+            --client_name "SEAPATH" \
+            --project_name "SEAPATH" \
+            --subtitle "SEAPATH virtual cluster" \
+            --add_machine_name \
+            --pdf_themes_dir "/report/seapath-themes" \
+            --include_dir "./include" \
+            ${compliance_matrices[@]} \
+            --allow_absent \
+            --merge_compliance_matrices \
+            --show_failed_cdata
+
+          mv test-report.pdf "SEAPATH SEAPATH virtual cluster Tests Report.pdf"
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v7
+        with:
+          path: test-report-pdf/*.pdf
+          if-no-files-found: error
+          archive: false
+
+      - name: Upload raw results # used for debugging
+        id: raw-results-artifact
+        # Those results are the only material available to investigate a run
+        # that broke in the middle, so upload them even when an earlier step
+        # failed. They only require the results folder to have been created.
+        if: "${{ !cancelled() && steps.prepare.conclusion == 'success' }}"
+        uses: actions/upload-artifact@v7
+        with:
+          name: raw-results-${{ inputs.seapath-flavor }}
+          path: ${{ env.RESULTS_FOLDER }}
+          include-hidden-files: true
+          retention-days: 1
+          # An early failure can leave the folder empty. Do not report that as
+          # yet another failure on top of the one being investigated.
+          if-no-files-found: warn
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          set +e
+          sudo virsh -c qemu:///system list --all
+          sudo virsh -c qemu:///system net-list --all
+          sudo ovs-vsctl show
+          sudo journalctl -u libvirtd --no-pager | tail -300
+          for n in seapath-node1 seapath-node2 seapath-node3; do
+            echo "=== $n ==="
+            sudo virsh -c qemu:///system dominfo "$n"
+          done
+          free -h
+          df -h
+
+      # When the workflow detects a failing test, it does not stop the workflow
+      # directly. Thus, we fail this workflow at the end if one failing test
+      # has been previously detected.
+      - name: Fail if needed
+        if: "${{ env.FAILED == 'true' }}"
+        run: |
+          exit 1

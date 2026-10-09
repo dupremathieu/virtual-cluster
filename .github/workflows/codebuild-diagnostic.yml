@@ -1,0 +1,94 @@
+name: CodeBuild diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/aws-runner]
+    paths: [.github/workflows/codebuild-diagnostic.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: codebuild-seapath-virtual-cluster-${{ github.run_id }}-${{ github.run_attempt }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Inspect runner capabilities
+        run: |
+          set -euo pipefail
+          cat /etc/os-release
+          uname -m
+          id
+          nproc
+          free -h
+          df -h . /tmp
+          printf 'PID 1: '
+          cat /proc/1/comm
+          for device in /dev/kvm /dev/net/tun; do
+            if [[ -e "$device" ]]; then
+              ls -l "$device"
+            else
+              echo "$device is absent"
+            fi
+          done
+          if grep -qm1 -E '\b(vmx|svm)\b' /proc/cpuinfo; then
+            echo 'CPU virtualization extensions are exposed'
+          else
+            echo 'CPU virtualization extensions are absent; test TCG emulation'
+          fi
+          for tool in systemctl docker virsh ovs-vsctl qemu-system-x86_64; do
+            command -v "$tool" || true
+          done
+          if command -v systemctl >/dev/null; then
+            systemctl is-system-running || true
+          fi
+
+      - name: Install QEMU for the emulation test
+        run: |
+          set -euo pipefail
+          if [[ "$(id -u)" == 0 ]]; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends qemu-system-x86
+          else
+            sudo -n apt-get update
+            sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends qemu-system-x86
+          fi
+
+      - name: Verify QEMU starts without KVM
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import subprocess
+
+          commands = [
+              {"execute": "qmp_capabilities"},
+              {"execute": "query-status", "id": "status"},
+              {"execute": "quit"},
+          ]
+          result = subprocess.run(
+              ["qemu-system-x86_64", "-accel", "tcg", "-m", "128", "-S",
+               "-nodefaults", "-no-user-config", "-display", "none", "-qmp", "stdio"],
+              input="".join(json.dumps(command) + "\n" for command in commands),
+              text=True, capture_output=True, timeout=30, check=True,
+          )
+          responses = [json.loads(line) for line in result.stdout.splitlines()]
+          status = next(response for response in responses if response.get("id") == "status")
+          if "error" in status or "return" not in status:
+              raise RuntimeError(status)
+          print("QEMU TCG startup succeeded:", status["return"])
+          PY
+
+      - name: Summarize scope of this diagnostic
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          QEMU TCG can start on this runner without KVM.
+
+          This checks emulation startup only. It does not boot SEAPATH, validate
+          libvirt/OVS networking, test nested guests, or measure cluster performance.
+          Inspect the capability log before adapting the full cluster workflow.
+          SUMMARY
