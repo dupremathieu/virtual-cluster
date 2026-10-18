@@ -1,0 +1,18 @@
+runners:
+  - name: seapath-kvm
+    cloud: aws
+    region: eu-west-3
+    instance_type: m7i.2xlarge
+    # Canonical Ubuntu 24.04 amd64, eu-west-3, published 2026-10-17.
+    machine_image: ami-001b955040bc46321
+    preemptible: false
+    labels:
+      - cirun-seapath-kvm
+    extra_config:
+      # AWS supports this option; the diagnostic verifies Cirun forwards it.
+      CpuOptions:
+        NestedVirtualization: enabled
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          VolumeSize: 150
+          VolumeType: gp3

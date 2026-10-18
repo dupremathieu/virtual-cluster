@@ -8,3 +8,4 @@
 *.wic
 *.raw
 keys/fence_virt.key
+/cirunenv
