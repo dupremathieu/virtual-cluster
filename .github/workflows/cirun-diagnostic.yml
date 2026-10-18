@@ -1,12 +1,8 @@
 name: Cirun KVM diagnostic
 
 on:
+  # Keep tests manual until Cirun forwards NestedVirtualization to EC2.
   workflow_dispatch:
-  push:
-    branches: [ci/aws-runner]
-    paths:
-      - .cirun.yml
-      - .github/workflows/cirun-diagnostic.yml
 
 permissions:
   contents: read

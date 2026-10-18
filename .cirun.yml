@@ -9,7 +9,8 @@ runners:
     labels:
       - cirun-seapath-kvm
     extra_config:
-      # AWS supports this option; the diagnostic verifies Cirun forwards it.
+      # Currently ignored by Cirun; see docs/cirun-kvm-evaluation.md.
+      # The KVM diagnostic must pass before this runner can host SEAPATH.
       CpuOptions:
         NestedVirtualization: enabled
       BlockDeviceMappings:
