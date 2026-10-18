@@ -2,10 +2,6 @@ name: EC2 Terraform KVM diagnostic
 
 on:
   workflow_dispatch:
-  # Temporary bootstrap trigger: workflow_dispatch needs publication on main.
-  push:
-    branches: [ci/aws-runner]
-    paths: [.github/workflows/ec2-terraform-diagnostic.yml]
 
 permissions:
   contents: read

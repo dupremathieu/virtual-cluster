@@ -51,14 +51,16 @@ module "github_runner" {
   runner_name_prefix          = "seapath-ec2-"
   enable_dynamic_labels       = false
 
-  instance_types                  = ["m7i.2xlarge"]
-  instance_target_capacity_type   = "on-demand"
-  runners_maximum_count           = 1
-  enable_ephemeral_runners        = true
-  enable_job_queued_check         = true
-  delay_webhook_event             = 0
-  runner_boot_time_in_minutes     = 10
-  minimum_running_time_in_minutes = 0
+  instance_types                = ["m7i.2xlarge"]
+  instance_target_capacity_type = "on-demand"
+  runners_maximum_count         = 1
+  enable_ephemeral_runners      = true
+  enable_job_queued_check       = true
+  delay_webhook_event           = 0
+  runner_boot_time_in_minutes   = 10
+  # JIT runners are registered before boot and initially appear idle to GitHub.
+  # Protect them from scale-down until Ubuntu and the runner have started.
+  minimum_running_time_in_minutes = 10
   scale_down_schedule_expression  = "cron(* * * * ? *)"
 
   # The account currently has only five concurrent Lambda executions.

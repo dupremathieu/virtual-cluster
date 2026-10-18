@@ -74,8 +74,11 @@ repository's default branch.
 
 The next evaluation uses the Terraform-managed EC2 runner prepared in
 [`infra/github-runner`](../infra/github-runner/README.md). Its launch template
-explicitly enables nested virtualization. Configuration validation and an AWS
-plan passed; deployment awaits an owned GitHub App and its repository installation.
+explicitly enables nested virtualization. Deployment and the
+[GitHub Actions diagnostic](https://github.com/dupremathieu/virtual-cluster/actions/runs/39145356232/attempts/2)
+passed: hardware KVM, libvirt and Open vSwitch are usable on the Terraform-managed
+runner, and automatic instance termination was verified. The full SEAPATH cluster
+and the further nested guest remain to be tested.
 
 Cirun needs to forward `CpuOptions.NestedVirtualization=enabled` in its AWS
 `RunInstances` request, or expose an equivalent supported option. Public AWS extra
