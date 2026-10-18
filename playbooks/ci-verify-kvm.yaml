@@ -1,0 +1,43 @@
+---
+- name: Verify hardware KVM inside every SEAPATH hypervisor
+  hosts: hypervisors
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Start QEMU with hardware acceleration and inspect QMP
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -euo pipefail
+          grep -qw vmx /proc/cpuinfo
+          modprobe kvm_intel
+          test -c /dev/kvm
+          python3 - <<'PY'
+          import json
+          import subprocess
+
+          commands = [
+              {"execute": "qmp_capabilities"},
+              {"execute": "query-kvm", "id": "kvm"},
+              {"execute": "quit"},
+          ]
+          result = subprocess.run(
+              ["qemu-system-x86_64", "-accel", "kvm", "-cpu", "host", "-m", "128", "-S",
+               "-nodefaults", "-no-user-config", "-display", "none", "-qmp", "stdio"],
+              input="".join(json.dumps(command) + "\n" for command in commands),
+              text=True, capture_output=True, timeout=30,
+          )
+          if result.returncode:
+              raise RuntimeError(result.stderr)
+          responses = [json.loads(line) for line in result.stdout.splitlines()]
+          status = next(response for response in responses if response.get("id") == "kvm")
+          if status.get("return", {}).get("enabled") is not True:
+              raise RuntimeError(status)
+          print("SEAPATH guest hardware KVM verified:", status["return"])
+          PY
+      changed_when: false
+      register: ci_kvm_probe
+
+    - name: Report the verified KVM status
+      ansible.builtin.debug:
+        var: ci_kvm_probe.stdout
