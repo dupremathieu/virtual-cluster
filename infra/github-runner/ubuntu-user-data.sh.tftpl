@@ -1,0 +1,42 @@
+#!/bin/bash
+set -eo pipefail
+set +x
+exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
+
+# The launch template terminates the instance on an OS-initiated shutdown.
+trap 'result=$?; if [ "$result" -ne 0 ]; then shutdown -h now; fi' EXIT
+systemd-run --unit=seapath-runner-expiry --on-active=2h /sbin/shutdown -h now
+
+grep -qw vmx /proc/cpuinfo
+modprobe kvm_intel
+test -c /dev/kvm
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends \
+  ca-certificates curl unzip jq git sudo docker.io \
+  qemu-system-x86 qemu-utils ovmf libvirt-daemon-system libvirt-clients \
+  openvswitch-switch dnsmasq-base
+
+if ! command -v aws >/dev/null; then
+  curl --fail --location --retry 3 https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip
+  unzip -q /tmp/awscliv2.zip -d /tmp
+  /tmp/aws/install
+fi
+
+user_name=ubuntu
+usermod -aG docker,libvirt,kvm "$user_name"
+systemctl enable --now docker libvirtd openvswitch-switch
+
+mkdir -p /var/lib/libvirt/images
+if ! virsh -c qemu:///system pool-info default >/dev/null 2>&1; then
+  virsh -c qemu:///system pool-define-as default dir --target /var/lib/libvirt/images
+  virsh -c qemu:///system pool-build default
+  virsh -c qemu:///system pool-start default
+  virsh -c qemu:///system pool-autostart default
+fi
+
+${pre_install}
+${install_runner}
+${post_install}
+${start_runner}

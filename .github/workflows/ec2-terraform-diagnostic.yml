@@ -1,0 +1,93 @@
+name: EC2 Terraform KVM diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ec2-terraform-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  diagnostic:
+    runs-on: [self-hosted, linux, x64, seapath-ec2-kvm]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Require hardware virtualization
+        run: |
+          set -euo pipefail
+          cat /etc/os-release
+          uname -m
+          nproc
+          free -h
+          df -h /
+          test "$(cat /proc/1/comm)" = systemd
+          if ! grep -qw vmx /proc/cpuinfo; then
+            echo '::error::Intel VMX is absent. Check EC2 CpuOptions.NestedVirtualization; software emulation is not accepted.'
+            exit 1
+          fi
+          sudo -n modprobe kvm_intel
+          sudo -n test -c /dev/kvm
+          ls -l /dev/kvm
+          printf 'Nested KVM module setting: '
+          cat /sys/module/kvm_intel/parameters/nested
+
+      - name: Install virtualization and network dependencies
+        run: |
+          set -euo pipefail
+          sudo -n apt-get update
+          sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils ovmf libvirt-daemon-system libvirt-clients \
+            openvswitch-switch dnsmasq-base
+          sudo -n systemctl enable --now libvirtd openvswitch-switch
+
+      - name: Verify QEMU uses KVM
+        run: |
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json
+          import subprocess
+
+          commands = [
+              {"execute": "qmp_capabilities"},
+              {"execute": "query-kvm", "id": "kvm"},
+              {"execute": "quit"},
+          ]
+          result = subprocess.run(
+              ["qemu-system-x86_64", "-accel", "kvm", "-cpu", "host,vmx=on,enforce", "-m", "128", "-S",
+               "-nodefaults", "-no-user-config", "-display", "none", "-qmp", "stdio"],
+              input="".join(json.dumps(command) + "\n" for command in commands),
+              text=True, capture_output=True, timeout=30,
+          )
+          if result.returncode:
+              raise RuntimeError(result.stderr)
+          responses = [json.loads(line) for line in result.stdout.splitlines()]
+          status = next(response for response in responses if response.get("id") == "kvm")
+          if status.get("return", {}).get("enabled") is not True:
+              raise RuntimeError(status)
+          print("QEMU hardware acceleration verified:", status["return"])
+          PY
+
+      - name: Verify libvirt and Open vSwitch
+        run: |
+          set -euo pipefail
+          sudo -n virsh -c qemu:///system list --all
+          sudo -n virsh -c qemu:///system domcapabilities --virttype kvm >/dev/null
+          trap 'sudo -n ovs-vsctl --if-exists del-br ec2-diag' EXIT
+          sudo -n ovs-vsctl --may-exist add-br ec2-diag
+          sudo -n ovs-vsctl br-exists ec2-diag
+          sudo -n ovs-vsctl show
+
+      - name: Summarize scope of this diagnostic
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          Hardware KVM acceleration, libvirt and Open vSwitch passed on Terraform-managed EC2.
+
+          This diagnostic does not boot the SEAPATH cluster or validate KVM for
+          a guest deployed inside a SEAPATH node. Those are subsequent checks.
+          SUMMARY

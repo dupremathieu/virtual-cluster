@@ -72,6 +72,11 @@ repository's default branch.
 
 ## Required Cirun change
 
+The next evaluation uses the Terraform-managed EC2 runner prepared in
+[`infra/github-runner`](../infra/github-runner/README.md). Its launch template
+explicitly enables nested virtualization. Configuration validation and an AWS
+plan passed; deployment awaits an owned GitHub App and its repository installation.
+
 Cirun needs to forward `CpuOptions.NestedVirtualization=enabled` in its AWS
 `RunInstances` request, or expose an equivalent supported option. Public AWS extra
 configuration documentation currently describes disk mappings but not CPU options.

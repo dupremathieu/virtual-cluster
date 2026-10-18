@@ -9,3 +9,10 @@
 *.raw
 keys/fence_virt.key
 /cirunenv
+/infra/github-runner/.terraform/
+/infra/github-runner/.artifacts/
+/infra/github-runner/.local/
+/infra/github-runner/terraform.tfstate*
+/infra/github-runner/terraform.tfvars
+/infra/github-runner/*.tfplan
+/infra/github-runner/__pycache__/

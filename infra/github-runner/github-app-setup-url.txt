@@ -1,0 +1,1 @@
+https://github.com/settings/apps/new?name=seapath-ec2-dupremathieu&description=Ephemeral+EC2+KVM+runners+for+the+SEAPATH+virtual-cluster+evaluation&url=https%3A%2F%2Fgithub.com%2Fdupremathieu%2Fvirtual-cluster&public=false&webhook_active=false&actions=read&checks=read&administration=write&metadata=read
