@@ -157,9 +157,16 @@ The first attempt exposed premature scale-down of an offline JIT runner with a
 zero-minute minimum lifetime. The ten-minute startup protection above fixes that
 race; it does not delay the runner's own termination after a completed job.
 
-This diagnostic validates the EC2 host dependencies. Booting the three SEAPATH
-nodes, running the Ansible setup and verifying KVM inside a SEAPATH guest remain
-separate subsequent checks.
+This diagnostic validates the EC2 host dependencies. The subsequent
+[full cluster evaluation and cost report](../../docs/ec2-full-test-cost.md)
+also completed successfully: three SEAPATH nodes, hardware KVM inside each node,
+Ansible configuration, a deployed guest VM, Cukinia, migration and PDF generation.
+The report records the inherited Cukinia exclusions and early cluster health warnings.
+
+The full workflow is
+[`ansible-setup-ec2.yml`](../../.github/workflows/ansible-setup-ec2.yml). It is also
+manual-only after its initial branch-scoped evaluation; dispatch requires the
+workflow to exist on the repository's default branch, as described above.
 
 References: [upstream setup](https://github-aws-runners.github.io/terraform-aws-github-runner/getting-started/),
 [external SSM credentials](https://github-aws-runners.github.io/terraform-aws-github-runner/configuration/),

@@ -1,10 +1,6 @@
 name: SEAPATH full test on EC2
 
 on:
-  # Temporary bootstrap trigger, removed after the evaluation.
-  push:
-    branches: [ci/aws-runner]
-    paths: [.github/workflows/ansible-setup-ec2.yml]
 
   workflow_call:
     inputs:
